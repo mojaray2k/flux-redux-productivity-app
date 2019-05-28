@@ -1,14 +1,19 @@
-import { createStore, combineReducers } from 'redux';
+console.log(`Message board`);
+import { createStore, combineReducers, applyMiddleware } from 'redux';
+import { get } from './http';
+import logger from 'redux-logger';
 
 // Define constants
 export const ONLINE = `ONLINE`;
 export const AWAY = `AWAY`;
 export const BUSY = `BUSY`;
+export const UPDATE_STATUS = `UPDATE_STATUS`;
 export const OFFLINE = `OFFLINE`;
 export const CREATE_NEW_MESSAGE = `CREATE_NEW_MESSAGE`;
 
-export const UPDATE_STATUS = `UPDATE_STATUS`;
-
+export const READY = `READY`;
+export const WAITING = `WAITING`;
+export const NEW_MESSAGE_SERVER_ACCEPTED = `NEW_MESSAGE_SERVER_ACCEPTED`;
 
 const defaultState = {
     messages: [{
@@ -24,7 +29,8 @@ const defaultState = {
         postedBy:`Llewlyn`,
         content:`Anyone got tickets to ng-conf?`
     }],
-    userStatus: ONLINE
+    userStatus: ONLINE,
+    apiCommunicationStatus: READY
 }
 
 // Reducers take two arguments (state) and ({action}).
@@ -50,6 +56,16 @@ const userStatusReducer = (state = defaultState.userStatus, {type, value}) => {
     return state;
 }
 
+const apiCommunicationStatusReducer = (state = READY, {type}) => {
+    switch(type){
+        case CREATE_NEW_MESSAGE:
+            return WAITING;
+        case NEW_MESSAGE_SERVER_ACCEPTED:
+            return READY;
+    }
+    return state;
+}
+
 const messageReducer = (state = defaultState.messages, {type, value, postedBy, date}) => {
     switch(type){
         case CREATE_NEW_MESSAGE:
@@ -62,13 +78,17 @@ const messageReducer = (state = defaultState.messages, {type, value, postedBy, d
 
 const combineReducer = combineReducers({
     userStatus: userStatusReducer,
-    messages: messageReducer
+    messages: messageReducer,
+    apiCommunicationStatus: apiCommunicationStatusReducer
 });
 
-const store = createStore(combineReducer);
+const store = createStore(
+    combineReducer, 
+    applyMiddleware(logger())
+);
 
 const render = () => {
-    const { messages, userStatus } = store.getState();
+    const { messages, userStatus, apiCommunicationStatus } = store.getState();
     document.getElementById("messages").innerHTML = messages
         .sort((a,b) => b.date - a.date)
         .map(message => (`
@@ -76,9 +96,9 @@ const render = () => {
                 ${message.postedBy} : ${message.content}
             </div>
         `)).join("");
-        // If the user status is offline then the input for the message is disabled
-        document.forms.newMessage.fields.disabled = (userStatus === OFFLINE);
         document.forms.newMessage.newMessage.value = "";
+        // If the user status is offline then the input for the message is disabled
+        document.forms.newMessage.fields.disabled = (userStatus === OFFLINE || apiCommunicationStatus === WAITING);
 }
 
 
@@ -91,6 +111,12 @@ const statusUpdateAction = (value) => {
 
 const newMessageAction = (content, postedBy)=>{
     const date = new Date();
+
+    get('/api/create', (id) => {
+        store.dispatch({
+            type: NEW_MESSAGE_SERVER_ACCEPTED
+        })
+    })
 
     return {
         type: CREATE_NEW_MESSAGE,
@@ -115,3 +141,8 @@ document.forms.newMessage.addEventListener("submit",(e)=>{
 render();
 
 store.subscribe(render);
+
+console.log("Making request...");
+// get(`http://google.com`, (id) => {
+//     console.log("Received callback", id);
+// })
